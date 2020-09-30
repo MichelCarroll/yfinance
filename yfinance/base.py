@@ -246,7 +246,20 @@ class TickerBase():
 
         return df
 
-    # ------------------------
+    def _get_holders(self):
+        url = "{}/{}/holders".format(self._scrape_url, self.ticker)
+        data = _pd.read_html(url)
+        
+        if len(data)>=3:
+            self._major_holders = data[0]
+            self._institutional_holders = data[1]
+            self._mutualfund_holders = data[2]
+        elif len(data)>=2:
+            self._major_holders = data[0]
+            self._institutional_holders = data[1]
+        else:
+            self._major_holders = data[0]
+
 
     def _get_fundamentals(self, kind=None, proxy=None):
         def cleanup(data):
@@ -280,22 +293,7 @@ class TickerBase():
         url = '%s/%s' % (self._scrape_url, self.ticker)
         data = utils.get_json(url, proxy)
 
-        # holders
-        url = "{}/{}/holders".format(self._scrape_url, self.ticker)
-        holders = _pd.read_html(url)
-        
-        if len(holders)>=3:
-            self._major_holders = holders[0]
-            self._institutional_holders = holders[1]
-            self._mutualfund_holders = holders[2]
-        elif len(holders)>=2:
-            self._major_holders = holders[0]
-            self._institutional_holders = holders[1]
-        else:
-            self._major_holders = holders[0]
-        
-        #self._major_holders = holders[0]
-        #self._institutional_holders = holders[1]
+        self._get_holders()
         
         if self._institutional_holders is not None:
             if 'Date Reported' in self._institutional_holders:
