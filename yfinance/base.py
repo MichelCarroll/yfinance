@@ -246,22 +246,8 @@ class TickerBase():
 
         return df
 
-    def _get_holders(self):
-        url = "{}/{}/holders".format(self._scrape_url, self.ticker)
-        data = _pd.read_html(url)
-        
-        if len(data)>=3:
-            self._major_holders = data[0]
-            self._institutional_holders = data[1]
-            self._mutualfund_holders = data[2]
-        elif len(data)>=2:
-            self._major_holders = data[0]
-            self._institutional_holders = data[1]
-        else:
-            self._major_holders = data[0]
+    def _get_financials(self, proxy=None): 
 
-
-    def _get_fundamentals(self, kind=None, proxy=None):
         def cleanup(data):
             df = _pd.DataFrame(data).drop(columns=['maxAge'])
             for col in df.columns:
@@ -280,6 +266,54 @@ class TickerBase():
             df.index = utils.camel2title(df.index)
             return df
 
+        url = "{}/{}/financials".format(self._scrape_url, self.ticker)
+        data = utils.get_json(url, proxy)
+
+        # generic patterns
+        for key in (
+            (self._cashflow, 'cashflowStatement', 'cashflowStatements'),
+            (self._balancesheet, 'balanceSheet', 'balanceSheetStatements'),
+            (self._financials, 'incomeStatement', 'incomeStatementHistory')
+        ):
+
+            item = key[1] + 'History'
+            if isinstance(data.get(item), dict):
+                key[0]['yearly'] = cleanup(data[item][key[2]])
+
+            item = key[1]+'HistoryQuarterly'
+            if isinstance(data.get(item), dict):
+                key[0]['quarterly'] = cleanup(data[item][key[2]])
+
+        # earnings
+        if isinstance(data.get('earnings'), dict):
+            earnings = data['earnings']['financialsChart']
+            df = _pd.DataFrame(earnings['yearly']).set_index('date')
+            df.columns = utils.camel2title(df.columns)
+            df.index.name = 'Year'
+            self._earnings['yearly'] = df
+
+            df = _pd.DataFrame(earnings['quarterly']).set_index('date')
+            df.columns = utils.camel2title(df.columns)
+            df.index.name = 'Quarter'
+            self._earnings['quarterly'] = df
+
+    def _get_holders(self):
+        url = "{}/{}/holders".format(self._scrape_url, self.ticker)
+        data = _pd.read_html(url)
+        
+        if len(data)>=3:
+            self._major_holders = data[0]
+            self._institutional_holders = data[1]
+            self._mutualfund_holders = data[2]
+        elif len(data)>=2:
+            self._major_holders = data[0]
+            self._institutional_holders = data[1]
+        else:
+            self._major_holders = data[0]
+
+
+    def _get_fundamentals(self, kind=None, proxy=None):
+        
         # setup proxy in requests format
         if proxy is not None:
             if isinstance(proxy, dict) and "https" in proxy:
@@ -289,12 +323,13 @@ class TickerBase():
         if self._fundamentals:
             return
 
+        self._get_holders()
+        self._get_financials(proxy)
+
         # get info and sustainability
         url = '%s/%s' % (self._scrape_url, self.ticker)
         data = utils.get_json(url, proxy)
 
-        self._get_holders()
-        
         if self._institutional_holders is not None:
             if 'Date Reported' in self._institutional_holders:
                 self._institutional_holders['Date Reported'] = _pd.to_datetime(
@@ -369,37 +404,6 @@ class TickerBase():
                 'Firm', 'To Grade', 'From Grade', 'Action']].sort_index()
         except Exception:
             pass
-
-        # get fundamentals
-        data = utils.get_json(url+'/financials', proxy)
-
-        # generic patterns
-        for key in (
-            (self._cashflow, 'cashflowStatement', 'cashflowStatements'),
-            (self._balancesheet, 'balanceSheet', 'balanceSheetStatements'),
-            (self._financials, 'incomeStatement', 'incomeStatementHistory')
-        ):
-
-            item = key[1] + 'History'
-            if isinstance(data.get(item), dict):
-                key[0]['yearly'] = cleanup(data[item][key[2]])
-
-            item = key[1]+'HistoryQuarterly'
-            if isinstance(data.get(item), dict):
-                key[0]['quarterly'] = cleanup(data[item][key[2]])
-
-        # earnings
-        if isinstance(data.get('earnings'), dict):
-            earnings = data['earnings']['financialsChart']
-            df = _pd.DataFrame(earnings['yearly']).set_index('date')
-            df.columns = utils.camel2title(df.columns)
-            df.index.name = 'Year'
-            self._earnings['yearly'] = df
-
-            df = _pd.DataFrame(earnings['quarterly']).set_index('date')
-            df.columns = utils.camel2title(df.columns)
-            df.index.name = 'Quarter'
-            self._earnings['quarterly'] = df
 
         self._fundamentals = True
 
